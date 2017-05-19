@@ -1,7 +1,7 @@
 /*
  * Copyright 2014 OpenMarket Ltd
  * Copyright 2017 Vector Creations Ltd
- 
+
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -149,7 +149,7 @@ public class RestClient<T> {
         RestAdapter restAdapter = builder.build();
 
         // debug only
-        //restAdapter.setLogLevel(RestAdapter.LogLevel.FULL);
+        restAdapter.setLogLevel(RestAdapter.LogLevel.FULL);
 
         mApi = restAdapter.create(type);
     }
