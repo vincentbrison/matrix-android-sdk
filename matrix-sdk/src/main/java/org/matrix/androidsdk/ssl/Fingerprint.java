@@ -27,7 +27,9 @@ import java.util.Arrays;
 
 /**
  * Represents a X509 Certificate fingerprint.
+ * @deprecated Use http://square.github.io/okhttp/3.x/okhttp/okhttp3/CertificatePinner.html
  */
+@Deprecated
 public class Fingerprint {
     public enum HashType { SHA1, SHA256 }
 

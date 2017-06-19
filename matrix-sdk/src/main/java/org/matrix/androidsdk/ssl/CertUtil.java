@@ -40,7 +40,9 @@ import javax.net.ssl.X509TrustManager;
 
 /**
  * Various utility classes for dealing with X509Certificates
+ * @deprecated Use http://square.github.io/okhttp/3.x/okhttp/okhttp3/CertificatePinner.html
  */
+@Deprecated
 public class CertUtil {
 
     private static final String LOG_TAG = "CertUtil";

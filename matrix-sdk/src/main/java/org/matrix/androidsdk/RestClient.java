@@ -36,11 +36,13 @@ import org.matrix.androidsdk.util.PolymorphicRequestBodyConverter;
 import org.matrix.androidsdk.util.UnsentEventsManager;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.X509TrustManager;
 
+import okhttp3.CertificatePinner;
 import okhttp3.Dispatcher;
 import okhttp3.HttpUrl;
 import okhttp3.Interceptor;
@@ -149,6 +151,7 @@ public class RestClient<T> {
             .addInterceptor(connectivityInterceptor)
             .addNetworkInterceptor(new StethoInterceptor());
 
+        configureCertificatPinning(hsConfig, okHttpClientBuilder);
 
         if (mUseMXExececutor) {
             okHttpClientBuilder.dispatcher(new Dispatcher(new MXRestExecutorService()));
@@ -175,6 +178,21 @@ public class RestClient<T> {
         Retrofit retrofit = builder.build();
 
         mApi = retrofit.create(type);
+    }
+
+    private void configureCertificatPinning(
+        HomeserverConnectionConfig hsConfig,
+        OkHttpClient.Builder okHttpClientBuilder
+    ) {
+        List<HomeserverConnectionConfig.CertificatePin> certificatePins =
+            hsConfig.getCertificatePins();
+        if (!certificatePins.isEmpty()) {
+            CertificatePinner.Builder builder = new CertificatePinner.Builder();
+            for (HomeserverConnectionConfig.CertificatePin certificatePin : certificatePins) {
+                builder.add(certificatePin.getHostname(), certificatePin.getPublicKeyHash());
+            }
+            okHttpClientBuilder.certificatePinner(builder.build());
+        }
     }
 
     @NonNull private String makeEndpoint(

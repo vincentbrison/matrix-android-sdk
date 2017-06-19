@@ -22,7 +22,9 @@ import java.security.cert.X509Certificate;
 /**
  * Thrown when we are given a certificate that does match the certificate we were told to
  * expect.
+ * @deprecated Use http://square.github.io/okhttp/3.x/okhttp/okhttp3/CertificatePinner.html
  */
+@Deprecated
 public class UnrecognizedCertificateException extends CertificateException {
     private X509Certificate mCert;
     private Fingerprint mFingerprint;

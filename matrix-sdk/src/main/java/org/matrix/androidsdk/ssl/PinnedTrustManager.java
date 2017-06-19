@@ -25,7 +25,9 @@ import javax.net.ssl.X509TrustManager;
 /**
  * Implements a TrustManager that checks Certificates against an explicit list of known
  * fingerprints.
+ * @deprecated Use http://square.github.io/okhttp/3.x/okhttp/okhttp3/CertificatePinner.html
  */
+@Deprecated
 public class PinnedTrustManager implements X509TrustManager {
     private List<Fingerprint> mFingerprints;
     private X509TrustManager mDefaultTrustManager;
