@@ -28,7 +28,6 @@ import org.matrix.androidsdk.listeners.IMXMediaUploadListener;
 import org.matrix.androidsdk.rest.callback.ApiCallback;
 import org.matrix.androidsdk.rest.model.ContentResponse;
 import org.matrix.androidsdk.rest.model.MatrixError;
-import org.matrix.androidsdk.ssl.CertUtil;
 import org.matrix.androidsdk.util.ContentManager;
 import org.matrix.androidsdk.util.JsonUtils;
 
@@ -253,6 +252,7 @@ public class MXMediaUploadWorkerTask extends AsyncTask<Void, IMXMediaUploadListe
 
     @Override
     protected String doInBackground(Void... params) {
+        // TODO: 29/06/2017 Vincent Brison : Use okhttp with certificate pinning
         HttpURLConnection conn;
         DataOutputStream dos;
 
@@ -283,18 +283,6 @@ public class MXMediaUploadWorkerTask extends AsyncTask<Void, IMXMediaUploadListe
             conn.setDoOutput(true);
             conn.setUseCaches(false);
             conn.setRequestMethod("POST");
-
-            if (conn instanceof HttpsURLConnection) {
-                // Add SSL Socket factory.
-                HttpsURLConnection sslConn = (HttpsURLConnection) conn;
-                try {
-                    Pair<SSLSocketFactory, X509TrustManager> pair = CertUtil.newPinnedSSLSocketFactory(mContentManager.getHsConfig());
-                    sslConn.setSSLSocketFactory(pair.first);
-                    sslConn.setHostnameVerifier(CertUtil.newHostnameVerifier(mContentManager.getHsConfig()));
-                } catch (Exception e) {
-                    Log.e(LOG_TAG, "sslConn " + e.getLocalizedMessage());
-                }
-            }
 
             conn.setRequestProperty("Content-Type", mMimeType);
             conn.setRequestProperty("Content-Length", Integer.toString(mContentStream.available()));
@@ -435,7 +423,7 @@ public class MXMediaUploadWorkerTask extends AsyncTask<Void, IMXMediaUploadListe
 
         return serverResponse;
     }
-    
+
     @Override
     protected void onProgressUpdate(IMXMediaUploadListener.UploadStats ... progress) {
         super.onProgressUpdate(progress);

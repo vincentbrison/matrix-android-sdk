@@ -1,12 +1,12 @@
-/* 
+/*
  * Copyright 2015 OpenMarket Ltd
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -38,7 +38,6 @@ import org.matrix.androidsdk.HomeserverConnectionConfig;
 import org.matrix.androidsdk.crypto.MXEncryptedAttachments;
 import org.matrix.androidsdk.listeners.IMXMediaDownloadListener;
 import org.matrix.androidsdk.rest.model.EncryptedFileInfo;
-import org.matrix.androidsdk.ssl.CertUtil;
 import org.matrix.androidsdk.util.ImageUtils;
 
 import java.io.BufferedReader;
@@ -609,6 +608,7 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
     @Override
     protected Void doInBackground(Integer... params) {
         try {
+            // TODO: 29/06/2017 Vincent Brison : Use okhttp with certificate pinning
             URL url = new URL(mUrl);
             Log.d(LOG_TAG, "MXMediaDownloadWorkerTask " + this + " starts");
 
@@ -620,22 +620,9 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
 
             int filelen = -1;
             URLConnection connection = null;
-            
+
             try {
             	connection = url.openConnection();
-            
-                if (mHsConfig != null && connection instanceof HttpsURLConnection) {
-                    // Add SSL Socket factory.
-                    HttpsURLConnection sslConn = (HttpsURLConnection) connection;
-                    try {
-                        Pair<SSLSocketFactory, X509TrustManager> pair = CertUtil.newPinnedSSLSocketFactory(mHsConfig);
-                        sslConn.setSSLSocketFactory(pair.first);
-                        sslConn.setHostnameVerifier(CertUtil.newHostnameVerifier(mHsConfig));
-                    } catch (Exception e) {
-                        Log.e(LOG_TAG, "doInBackground SSL exception " + e.getLocalizedMessage());
-                    }
-                }
-
                 // add a timeout to avoid infinite loading display.
                 connection.setReadTimeout(DOWNLOAD_TIME_OUT);
                 filelen = connection.getContentLength();

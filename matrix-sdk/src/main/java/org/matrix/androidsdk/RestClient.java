@@ -22,14 +22,12 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
-import android.util.Pair;
 
 import com.facebook.stetho.okhttp3.StethoInterceptor;
 import com.google.gson.Gson;
 
 import org.matrix.androidsdk.rest.client.MXRestExecutorService;
 import org.matrix.androidsdk.rest.model.login.Credentials;
-import org.matrix.androidsdk.ssl.CertUtil;
 import org.matrix.androidsdk.util.JsonUtils;
 import org.matrix.androidsdk.util.Log;
 import org.matrix.androidsdk.util.PolymorphicRequestBodyConverter;
@@ -38,9 +36,6 @@ import org.matrix.androidsdk.util.UnsentEventsManager;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.X509TrustManager;
 
 import okhttp3.CertificatePinner;
 import okhttp3.Dispatcher;
@@ -155,14 +150,6 @@ public class RestClient<T> {
 
         if (mUseMXExececutor) {
             okHttpClientBuilder.dispatcher(new Dispatcher(new MXRestExecutorService()));
-        }
-
-        try {
-            Pair<SSLSocketFactory, X509TrustManager> pair = CertUtil.newPinnedSSLSocketFactory(hsConfig);
-            okHttpClientBuilder.sslSocketFactory(pair.first, pair.second);
-            okHttpClientBuilder.hostnameVerifier(CertUtil.newHostnameVerifier(hsConfig));
-        } catch (Exception e) {
-            Log.e(LOG_TAG, "## RestClient() setSslSocketFactory failed" + e.getMessage());
         }
 
         mOkHttpClient = okHttpClientBuilder.build();
