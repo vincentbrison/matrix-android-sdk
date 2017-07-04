@@ -514,6 +514,21 @@ public class Event implements Externalizable {
                 EVENT_TYPE_CALL_HANGUP.equals(getType());
     }
 
+    public boolean isStateEvent() {
+        return type.equals(EVENT_TYPE_STATE_ROOM_NAME) ||
+            type.equals(EVENT_TYPE_STATE_ROOM_TOPIC) ||
+            type.equals(EVENT_TYPE_STATE_ROOM_AVATAR) ||
+            type.equals(EVENT_TYPE_STATE_ROOM_MEMBER) ||
+            type.equals(EVENT_TYPE_STATE_ROOM_THIRD_PARTY_INVITE) ||
+            type.equals(EVENT_TYPE_STATE_ROOM_CREATE) ||
+            type.equals(EVENT_TYPE_STATE_ROOM_JOIN_RULES) ||
+            type.equals(EVENT_TYPE_STATE_ROOM_GUEST_ACCESS) ||
+            type.equals(EVENT_TYPE_STATE_ROOM_POWER_LEVELS) ||
+            type.equals(EVENT_TYPE_STATE_ROOM_ALIASES) ||
+            type.equals(EVENT_TYPE_STATE_CANONICAL_ALIAS) ||
+            type.equals(EVENT_TYPE_STATE_HISTORY_VISIBILITY);
+    }
+
     /**
      * Make a deep copy of this room state object.
      *
