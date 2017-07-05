@@ -25,9 +25,6 @@ import android.os.AsyncTask;
 import android.os.Looper;
 import android.support.v4.util.LruCache;
 import android.text.TextUtils;
-import org.matrix.androidsdk.util.Log;
-
-import android.util.Pair;
 import android.webkit.MimeTypeMap;
 import android.widget.ImageView;
 
@@ -39,6 +36,7 @@ import org.matrix.androidsdk.crypto.MXEncryptedAttachments;
 import org.matrix.androidsdk.listeners.IMXMediaDownloadListener;
 import org.matrix.androidsdk.rest.model.EncryptedFileInfo;
 import org.matrix.androidsdk.util.ImageUtils;
+import org.matrix.androidsdk.util.Log;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -55,10 +53,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.X509TrustManager;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
 /**
  * This class manages the media downloading in background.
@@ -158,7 +159,7 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
     /**
      * Download constants
      */
-    private static final int DOWNLOAD_TIME_OUT = 10 * 1000;
+    private static final int DOWNLOAD_TIME_OUT_MS = 10 * 1000;
     private static final int DOWNLOAD_BUFFER_READ_SIZE = 1024 * 32;
 
 
@@ -620,33 +621,35 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
 
             int filelen = -1;
             URLConnection connection = null;
+            OkHttpClient client = new OkHttpClient
+                .Builder()
+                .readTimeout(DOWNLOAD_TIME_OUT_MS, TimeUnit.MILLISECONDS)
+                .build();
+            Request request = new Request.Builder().url(url).build();
+            Response response = client.newCall(request).execute();
+            InputStream responseBodyStream = response.body().byteStream();
+            if (response.isSuccessful()) {
+                stream = responseBodyStream;
+            } else {
+                try {
+                    BufferedReader streamReader = new BufferedReader(new InputStreamReader(
+                        responseBodyStream,
+                        "UTF-8"
+                    ));
+                    StringBuilder responseStrBuilder = new StringBuilder();
 
-            try {
-            	connection = url.openConnection();
-                // add a timeout to avoid infinite loading display.
-                connection.setReadTimeout(DOWNLOAD_TIME_OUT);
-                filelen = connection.getContentLength();
-                stream = connection.getInputStream();
-            } catch (Exception e) {
-                Log.e(LOG_TAG, "bitmapForURL : fail to open the connection " + e.getMessage());
+                    String inputStr;
 
-                InputStream errorStream = ((HttpsURLConnection) connection).getErrorStream();
-
-                if (null != errorStream) {
-                    try {
-                        BufferedReader streamReader = new BufferedReader(new InputStreamReader(errorStream, "UTF-8"));
-                        StringBuilder responseStrBuilder = new StringBuilder();
-
-                        String inputStr;
-
-                        while ((inputStr = streamReader.readLine()) != null) {
-                            responseStrBuilder.append(inputStr);
-                        }
-
-                        mErrorAsJsonElement = new JsonParser().parse(responseStrBuilder.toString());
-                    } catch (Exception ee) {
-                        Log.e(LOG_TAG, "bitmapForURL : Error parsing error " + ee.getLocalizedMessage());
+                    while ((inputStr = streamReader.readLine()) != null) {
+                        responseStrBuilder.append(inputStr);
                     }
+
+                    mErrorAsJsonElement = new JsonParser().parse(responseStrBuilder.toString());
+                } catch (Exception ee) {
+                    Log.e(
+                        LOG_TAG,
+                        "bitmapForURL : Error parsing error " + ee.getLocalizedMessage()
+                    );
                 }
 
                 // privacy
