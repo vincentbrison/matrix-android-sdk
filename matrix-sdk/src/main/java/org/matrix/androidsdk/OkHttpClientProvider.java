@@ -25,41 +25,55 @@ public final class OkHttpClientProvider {
     private static final int WRITE_TIMEOUT_MS = 60000;
     private static final int DOWNLOAD_READ_TIME_OUT_MS = 10000;
 
-    private volatile static OkHttpClient restOkHttpClient;
-    private volatile static OkHttpClient downloadOkHttpClient;
+    private static int restParametersHash = 0;
+    private static OkHttpClient restOkHttpClient;
+    private static int downloadParametersHash = 0;
+    private static OkHttpClient downloadOkHttpClient;
 
-    private OkHttpClientProvider() {}
+    private OkHttpClientProvider() {
+    }
 
-    public static OkHttpClient getRestOkHttpClient(
+    public static synchronized OkHttpClient getRestOkHttpClient(
         Credentials credentials,
         UnsentEventsManager unsentEventsManager,
         HomeserverConnectionConfig hsConfig,
         boolean useMXExececutor
     ) {
-        if (restOkHttpClient == null) {
-            synchronized (OkHttpClientProvider.class) {
-                if (restOkHttpClient == null) {
-                    initRestOkHttpClient(
-                        credentials,
-                        unsentEventsManager,
-                        hsConfig,
-                        useMXExececutor
-                    );
-                }
-            }
+        int parametersHash = computeParametersHash(
+            credentials,
+            unsentEventsManager,
+            hsConfig,
+            useMXExececutor
+        );
+        if (parametersHash != restParametersHash) {
+            restParametersHash = parametersHash;
+            initRestOkHttpClient(
+                credentials,
+                unsentEventsManager,
+                hsConfig,
+                useMXExececutor
+            );
         }
         return restOkHttpClient;
     }
 
-    public static OkHttpClient getDownloadOkHttpClient(HomeserverConnectionConfig hsConfig) {
-        if (downloadOkHttpClient == null) {
-            synchronized (OkHttpClientProvider.class) {
-                if (downloadOkHttpClient == null) {
-                    initDownloadOkHttpClient(hsConfig);
-                }
-            }
+    public static synchronized OkHttpClient getDownloadOkHttpClient(
+        HomeserverConnectionConfig hsConfig
+    ) {
+        int parameterHash = computeParametersHash(hsConfig);
+        if (parameterHash != downloadParametersHash) {
+            downloadParametersHash = parameterHash;
+            initDownloadOkHttpClient(hsConfig);
         }
         return downloadOkHttpClient;
+    }
+
+    private static int computeParametersHash(Object... values) {
+        int result = 0;
+        for (Object object : values) {
+            result = 37 * result + (object == null ? 0 : object.hashCode());
+        }
+        return result;
     }
 
     private static void initRestOkHttpClient(
