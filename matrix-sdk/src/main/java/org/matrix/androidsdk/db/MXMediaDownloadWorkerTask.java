@@ -32,6 +32,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 
 import org.matrix.androidsdk.HomeserverConnectionConfig;
+import org.matrix.androidsdk.OkHttpClientProvider;
 import org.matrix.androidsdk.crypto.MXEncryptedAttachments;
 import org.matrix.androidsdk.listeners.IMXMediaDownloadListener;
 import org.matrix.androidsdk.rest.model.EncryptedFileInfo;
@@ -159,7 +160,6 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
     /**
      * Download constants
      */
-    private static final int DOWNLOAD_TIME_OUT_MS = 10 * 1000;
     private static final int DOWNLOAD_BUFFER_READ_SIZE = 1024 * 32;
 
 
@@ -609,7 +609,6 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
     @Override
     protected Void doInBackground(Integer... params) {
         try {
-            // TODO: 29/06/2017 Vincent Brison : Use okhttp with certificate pinning
             URL url = new URL(mUrl);
             Log.d(LOG_TAG, "MXMediaDownloadWorkerTask " + this + " starts");
 
@@ -620,11 +619,7 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
             InputStream stream = null;
 
             int filelen = -1;
-            URLConnection connection = null;
-            OkHttpClient client = new OkHttpClient
-                .Builder()
-                .readTimeout(DOWNLOAD_TIME_OUT_MS, TimeUnit.MILLISECONDS)
-                .build();
+            OkHttpClient client = OkHttpClientProvider.getDownloadOkHttpClient(mHsConfig);
             Request request = new Request.Builder().url(url).build();
             Response response = client.newCall(request).execute();
             InputStream responseBodyStream = response.body().byteStream();
@@ -754,10 +749,6 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
                         refreshTimer.cancel();
                     }
                 });
-
-                if ((null != connection) && (connection instanceof HttpsURLConnection)) {
-                    ((HttpsURLConnection) connection).disconnect();
-                }
 
                 // the file has been successfully downloaded
                 if (mDownloadStats.mProgress == 100) {

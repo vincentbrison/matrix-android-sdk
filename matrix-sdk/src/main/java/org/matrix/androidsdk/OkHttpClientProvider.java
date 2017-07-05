@@ -23,8 +23,10 @@ public final class OkHttpClientProvider {
     private static final int CONNECTION_TIMEOUT_MS = 30000;
     private static final int READ_TIMEOUT_MS = 60000;
     private static final int WRITE_TIMEOUT_MS = 60000;
+    private static final int DOWNLOAD_READ_TIME_OUT_MS = 10000;
 
     private volatile static OkHttpClient restOkHttpClient;
+    private volatile static OkHttpClient downloadOkHttpClient;
 
     private OkHttpClientProvider() {}
 
@@ -49,6 +51,17 @@ public final class OkHttpClientProvider {
         return restOkHttpClient;
     }
 
+    public static OkHttpClient getDownloadOkHttpClient(HomeserverConnectionConfig hsConfig) {
+        if (downloadOkHttpClient == null) {
+            synchronized (OkHttpClientProvider.class) {
+                if (downloadOkHttpClient == null) {
+                    initDownloadOkHttpClient(hsConfig);
+                }
+            }
+        }
+        return downloadOkHttpClient;
+    }
+
     private static void initRestOkHttpClient(
         Credentials credentials,
         UnsentEventsManager unsentEventsManager,
@@ -71,6 +84,14 @@ public final class OkHttpClientProvider {
             okHttpClientBuilder.dispatcher(new Dispatcher(new MXRestExecutorService()));
         }
         restOkHttpClient = okHttpClientBuilder.build();
+    }
+
+    private static void initDownloadOkHttpClient(HomeserverConnectionConfig hsConfig) {
+        OkHttpClient.Builder okHttpClientBuilder = new OkHttpClient()
+            .newBuilder()
+            .readTimeout(DOWNLOAD_READ_TIME_OUT_MS, TimeUnit.MILLISECONDS);
+        configureCertificatPinning(hsConfig, okHttpClientBuilder);
+        downloadOkHttpClient = okHttpClientBuilder.build();
     }
 
     private static void configureCertificatPinning(
