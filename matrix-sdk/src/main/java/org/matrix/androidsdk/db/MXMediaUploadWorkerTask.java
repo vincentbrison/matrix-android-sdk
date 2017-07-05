@@ -17,35 +17,40 @@
 package org.matrix.androidsdk.db;
 
 import android.os.AsyncTask;
+import android.os.Handler;
 import android.os.Looper;
-import android.util.Pair;
-
-import org.matrix.androidsdk.util.Log;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.matrix.androidsdk.OkHttpClientProvider;
 import org.matrix.androidsdk.listeners.IMXMediaUploadListener;
 import org.matrix.androidsdk.rest.callback.ApiCallback;
 import org.matrix.androidsdk.rest.model.ContentResponse;
 import org.matrix.androidsdk.rest.model.MatrixError;
 import org.matrix.androidsdk.util.ContentManager;
 import org.matrix.androidsdk.util.JsonUtils;
+import org.matrix.androidsdk.util.Log;
 
 import java.io.DataOutputStream;
 import java.io.EOFException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Timer;
 import java.util.TimerTask;
 
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.X509TrustManager;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okio.BufferedSink;
 
 /**
  * Private AsyncTask used to upload files.
@@ -252,17 +257,8 @@ public class MXMediaUploadWorkerTask extends AsyncTask<Void, IMXMediaUploadListe
 
     @Override
     protected String doInBackground(Void... params) {
-        // TODO: 29/06/2017 Vincent Brison : Use okhttp with certificate pinning
-        HttpURLConnection conn;
-        DataOutputStream dos;
-
         mResponseCode = -1;
-
-        int bytesRead, bytesAvailable;
-        int totalWritten, totalSize;
-        int bufferSize;
-        byte[] buffer;
-
+        int totalSize;
         String serverResponse = null;
         String urlString = mContentManager.getHsConfig().getHomeserverUri().toString() + ContentManager.URI_PREFIX_CONTENT_API + "upload?access_token=" + mContentManager.getHsConfig().getCredentials().accessToken;
 
@@ -277,50 +273,32 @@ public class MXMediaUploadWorkerTask extends AsyncTask<Void, IMXMediaUploadListe
 
         try {
             URL url = new URL(urlString);
+            final Handler uiHandler = new Handler(Looper.getMainLooper());
+            RequestBody requestBody = new RequestBody() {
+                @Override public MediaType contentType() {
+                    return MediaType.parse(mMimeType);
+                }
 
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setDoInput(true);
-            conn.setDoOutput(true);
-            conn.setUseCaches(false);
-            conn.setRequestMethod("POST");
+                @Override public void writeTo(BufferedSink sink) throws IOException {
+                    byte [] buffer = new byte[UPLOAD_BUFFER_READ_SIZE];
+                    int bytesRead = 0;
+                    while((bytesRead = mContentStream.read(buffer)) != -1) {
+                        sink.outputStream().write(buffer, 0, bytesRead);
+                        mUploadStats.mUploadedSize += bytesRead;
+                    }
+                }
+            };
+            Request request = new Request.Builder()
+                .url(url)
+                .post(requestBody)
+                .build();
+            OkHttpClient client = OkHttpClientProvider.getUploadOkHttpClient();
 
-            conn.setRequestProperty("Content-Type", mMimeType);
-            conn.setRequestProperty("Content-Length", Integer.toString(mContentStream.available()));
-            // avoid caching data before really sending them.
-            conn.setFixedLengthStreamingMode(mContentStream.available());
-
-            conn.connect();
-
-            dos = new DataOutputStream(conn.getOutputStream());
-
-            // create a buffer of maximum size
-            totalSize = bytesAvailable = mContentStream.available();
-            totalWritten = 0;
-            bufferSize = Math.min(bytesAvailable, UPLOAD_BUFFER_READ_SIZE);
-            buffer = new byte[bufferSize];
-
-            mUploadStats = new IMXMediaUploadListener.UploadStats();
-            mUploadStats.mUploadId = mUploadId;
-            mUploadStats.mProgress = 0;
-            mUploadStats.mUploadedSize = 0;
-            mUploadStats.mFileSize = totalSize;
-            mUploadStats.mElapsedTime = 0;
-            mUploadStats.mEstimatedRemainingTime = -1;
-            mUploadStats.mBitRate = 0;
-
+            totalSize = mContentStream.available();
             final long startUploadTime = System.currentTimeMillis();
-
             Log.d(LOG_TAG, "doInBackground : start Upload (" + totalSize + " bytes)");
-
-            // read file and write it into form...
-            bytesRead = mContentStream.read(buffer, 0, bufferSize);
-
             dispatchOnUploadStart();
-
-            final android.os.Handler uiHandler = new android.os.Handler(Looper.getMainLooper());
-
             final Timer refreshTimer = new Timer();
-
             uiHandler.post(new Runnable() {
                 @Override
                 public void run() {
@@ -336,21 +314,12 @@ public class MXMediaUploadWorkerTask extends AsyncTask<Void, IMXMediaUploadListe
                                 }
                             });
                         }
-                    }, new java.util.Date(), 100);
+                    }, new Date(), 100);
 
                 }
             });
-
-            while ((bytesRead > 0) && !isUploadCancelled()) {
-                dos.write(buffer, 0, bytesRead);
-                totalWritten += bytesRead;
-                bytesAvailable = mContentStream.available();
-                bufferSize = Math.min(bytesAvailable, UPLOAD_BUFFER_READ_SIZE);
-
-                Log.d(LOG_TAG, "doInBackground : totalWritten " + totalWritten + " / totalSize " + totalSize);
-                mUploadStats.mUploadedSize = totalWritten;
-                bytesRead = mContentStream.read(buffer, 0, bufferSize);
-            }
+            initUploadStats(totalSize);
+            Response response = client.newCall(request).execute();
             mIsDone = true;
             uiHandler.post(new Runnable() {
                 @Override
@@ -360,34 +329,15 @@ public class MXMediaUploadWorkerTask extends AsyncTask<Void, IMXMediaUploadListe
             });
 
             if (!isUploadCancelled()) {
-                mUploadStats.mProgress = 96;
-                publishProgress(startUploadTime);
-                dos.flush();
-                mUploadStats.mProgress = 97;
-                publishProgress(startUploadTime);
-                dos.close();
                 mUploadStats.mProgress = 98;
                 publishProgress(startUploadTime);
-
-                try {
-                    // Read the SERVER RESPONSE
-                    mResponseCode = conn.getResponseCode();
-                } catch (EOFException eofEx) {
-                    mResponseCode = HttpURLConnection.HTTP_INTERNAL_ERROR;
-                }
-
+                mResponseCode = response.code();
                 mUploadStats.mProgress = 99;
                 publishProgress(startUploadTime);
 
                 Log.d(LOG_TAG, "doInBackground : Upload is done with response code " + mResponseCode);
 
-                InputStream is;
-
-                if (mResponseCode == HttpURLConnection.HTTP_OK) {
-                    is = conn.getInputStream();
-                } else {
-                    is = conn.getErrorStream();
-                }
+                InputStream is = response.body().byteStream();
 
                 int ch;
                 StringBuffer b = new StringBuffer();
@@ -406,13 +356,6 @@ public class MXMediaUploadWorkerTask extends AsyncTask<Void, IMXMediaUploadListe
                         Log.e(LOG_TAG, "doInBackground : Error parsing " + e.getLocalizedMessage());
                     }
                 }
-            } else {
-                dos.flush();
-                dos.close();
-            }
-
-            if (null != conn) {
-                conn.disconnect();
             }
         } catch (Exception e) {
             serverResponse = e.getLocalizedMessage();
@@ -422,6 +365,17 @@ public class MXMediaUploadWorkerTask extends AsyncTask<Void, IMXMediaUploadListe
         mResponseFromServer = serverResponse;
 
         return serverResponse;
+    }
+
+    private void initUploadStats(int totalSize) {
+        mUploadStats = new IMXMediaUploadListener.UploadStats();
+        mUploadStats.mUploadId = mUploadId;
+        mUploadStats.mProgress = 0;
+        mUploadStats.mUploadedSize = 0;
+        mUploadStats.mFileSize = totalSize;
+        mUploadStats.mElapsedTime = 0;
+        mUploadStats.mEstimatedRemainingTime = -1;
+        mUploadStats.mBitRate = 0;
     }
 
     @Override

@@ -29,6 +29,9 @@ public final class OkHttpClientProvider {
     private static OkHttpClient restOkHttpClient;
     private static int downloadParametersHash = 0;
     private static OkHttpClient downloadOkHttpClient;
+    private static int uploadParametersHash = 0;
+    private static OkHttpClient uploadOkHttpClient;
+
 
     private OkHttpClientProvider() {
     }
@@ -66,6 +69,13 @@ public final class OkHttpClientProvider {
             initDownloadOkHttpClient(hsConfig);
         }
         return downloadOkHttpClient;
+    }
+
+    public static synchronized OkHttpClient getUploadOkHttpClient() {
+        if (uploadOkHttpClient == null) {
+            initUploadOkHttpClient();
+        }
+        return uploadOkHttpClient;
     }
 
     private static int computeParametersHash(Object... values) {
@@ -106,6 +116,13 @@ public final class OkHttpClientProvider {
             .readTimeout(DOWNLOAD_READ_TIME_OUT_MS, TimeUnit.MILLISECONDS);
         configureCertificatPinning(hsConfig, okHttpClientBuilder);
         downloadOkHttpClient = okHttpClientBuilder.build();
+    }
+
+    private static void initUploadOkHttpClient() {
+        OkHttpClient.Builder okHttpClientBuilder = new OkHttpClient()
+            .newBuilder()
+            .cache(null);
+        uploadOkHttpClient = okHttpClientBuilder.build();
     }
 
     private static void configureCertificatPinning(
