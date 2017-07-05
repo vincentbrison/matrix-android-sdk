@@ -16,34 +16,16 @@
  */
 package org.matrix.androidsdk;
 
-import android.content.Context;
-import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
 import android.support.annotation.NonNull;
-import android.text.TextUtils;
 
-import com.facebook.stetho.okhttp3.StethoInterceptor;
 import com.google.gson.Gson;
 
-import org.matrix.androidsdk.rest.client.MXRestExecutorService;
 import org.matrix.androidsdk.rest.model.login.Credentials;
 import org.matrix.androidsdk.util.JsonUtils;
-import org.matrix.androidsdk.util.Log;
 import org.matrix.androidsdk.util.PolymorphicRequestBodyConverter;
 import org.matrix.androidsdk.util.UnsentEventsManager;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-
-import okhttp3.CertificatePinner;
-import okhttp3.Dispatcher;
-import okhttp3.HttpUrl;
-import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
@@ -52,8 +34,6 @@ import retrofit2.converter.gson.GsonConverterFactory;
  */
 public class RestClient<T> {
 
-    private static final String LOG_TAG = "RestClient";
-
     public static final String URI_API_PREFIX_PATH_R0 = "_matrix/client/r0/";
     public static final String URI_API_PREFIX_PATH_UNSTABLE = "_matrix/client/unstable/";
 
@@ -61,12 +41,6 @@ public class RestClient<T> {
      * Prefix used in path of identity server API requests.
      */
     public static final String URI_API_PREFIX_IDENTITY = "_matrix/identity/api/v1/";
-
-    private static final String PARAM_ACCESS_TOKEN = "access_token";
-
-    private static final int CONNECTION_TIMEOUT_MS = 30000;
-    private static final int READ_TIMEOUT_MS = 60000;
-    private static final int WRITE_TIMEOUT_MS = 60000;
 
     protected Credentials mCredentials;
 
@@ -80,12 +54,6 @@ public class RestClient<T> {
 
     // unitary tests only
     public static boolean mUseMXExececutor = false;
-
-    // the user agent
-    private static String sUserAgent = null;
-
-    // http client
-    private OkHttpClient mOkHttpClient = new OkHttpClient();
 
     public RestClient(HomeserverConnectionConfig hsConfig, Class<T> type, String uriPrefix, boolean withNullSerialization) {
         this(hsConfig, type, uriPrefix, withNullSerialization, false);
@@ -102,57 +70,12 @@ public class RestClient<T> {
         mHsConfig = hsConfig;
         mCredentials = hsConfig.getCredentials();
 
-        Interceptor authentInterceptor = new Interceptor() {
-
-            @Override public Response intercept(Chain chain) throws IOException {
-                Request request = chain.request();
-                Request.Builder newRequestBuilder = request.newBuilder();
-                if (null != sUserAgent) {
-                    // set a custom user agent
-                    newRequestBuilder.addHeader("User-Agent", sUserAgent);
-                }
-
-                // Add the access token to all requests if it is set
-                if ((mCredentials != null) && (mCredentials.accessToken != null)) {
-                    HttpUrl url = request.url()
-                        .newBuilder()
-                        .addEncodedQueryParameter(PARAM_ACCESS_TOKEN, mCredentials.accessToken)
-                        .build();
-                    newRequestBuilder.url(url);
-                }
-
-                request = newRequestBuilder.build();
-
-                return chain.proceed(request);
-            }
-        };
-
-        Interceptor connectivityInterceptor = new Interceptor() {
-            @Override public Response intercept(Chain chain) throws IOException {
-                if (mUnsentEventsManager != null
-                    && mUnsentEventsManager.getNetworkConnectivityReceiver() != null
-                    && !mUnsentEventsManager.getNetworkConnectivityReceiver().isConnected()) {
-                    throw new IOException("Not connected");
-                }
-                return chain.proceed(chain.request());
-            }
-        };
-
-        OkHttpClient.Builder okHttpClientBuilder = new OkHttpClient().newBuilder()
-            .connectTimeout(CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .readTimeout(READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .writeTimeout(WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .addInterceptor(authentInterceptor)
-            .addInterceptor(connectivityInterceptor)
-            .addNetworkInterceptor(new StethoInterceptor());
-
-        configureCertificatPinning(hsConfig, okHttpClientBuilder);
-
-        if (mUseMXExececutor) {
-            okHttpClientBuilder.dispatcher(new Dispatcher(new MXRestExecutorService()));
-        }
-
-        mOkHttpClient = okHttpClientBuilder.build();
+        OkHttpClient okHttpClient = OkHttpClientProvider.getRestOkHttpClient(
+            mCredentials,
+            mUnsentEventsManager,
+            hsConfig,
+            mUseMXExececutor
+        );
         final String endPoint = makeEndpoint(hsConfig, uriPrefix, useIdentityServer);
 
         // Rest adapter for turning API interfaces into actual REST-calling objects
@@ -160,26 +83,11 @@ public class RestClient<T> {
                 .baseUrl(endPoint)
                 .addConverterFactory(PolymorphicRequestBodyConverter.FACTORY)
                 .addConverterFactory(GsonConverterFactory.create(gson))
-                .client(mOkHttpClient);
+                .client(okHttpClient);
 
         Retrofit retrofit = builder.build();
 
         mApi = retrofit.create(type);
-    }
-
-    private void configureCertificatPinning(
-        HomeserverConnectionConfig hsConfig,
-        OkHttpClient.Builder okHttpClientBuilder
-    ) {
-        List<HomeserverConnectionConfig.CertificatePin> certificatePins =
-            hsConfig.getCertificatePins();
-        if (!certificatePins.isEmpty()) {
-            CertificatePinner.Builder builder = new CertificatePinner.Builder();
-            for (HomeserverConnectionConfig.CertificatePin certificatePin : certificatePins) {
-                builder.add(certificatePin.getHostname(), certificatePin.getPublicKeyHash());
-            }
-            okHttpClientBuilder.certificatePinner(builder.build());
-        }
     }
 
     @NonNull private String makeEndpoint(
@@ -210,48 +118,6 @@ public class RestClient<T> {
             dynamicPath = dynamicPath.substring("https://".length());
         }
         return dynamicPath;
-    }
-
-    /**
-     * Create an user agent with the application version.
-     * @param appContext the application context
-     */
-    public static void initUserAgent(Context appContext) {
-        String appName = "";
-        String appVersion = "";
-
-        if (null != appContext) {
-            try {
-                PackageManager pm = appContext.getPackageManager();
-                ApplicationInfo appInfo = pm.getApplicationInfo(appContext.getApplicationContext().getPackageName(), 0);
-                appName = pm.getApplicationLabel(appInfo).toString();
-
-                PackageInfo pkgInfo = pm.getPackageInfo(appContext.getApplicationContext().getPackageName(), 0);
-                appVersion = pkgInfo.versionName;
-            } catch (Exception e) {
-                Log.e(LOG_TAG, "## initUserAgent() : failed " + e.getMessage());
-            }
-        }
-
-        sUserAgent = System.getProperty("http.agent");
-
-        // cannot retrieve the application version
-        if (TextUtils.isEmpty(appName) || TextUtils.isEmpty(appVersion)) {
-            if (null == sUserAgent) {
-                sUserAgent = "Java" + System.getProperty("java.version");
-            }
-            return;
-        }
-
-        // if there is no user agent or cannot parse it
-        if ((null == sUserAgent) || (sUserAgent.lastIndexOf(")") == -1) || (sUserAgent.indexOf("(") == -1))  {
-            sUserAgent = appName + "/" + appVersion + " (MatrixAndroidSDK " + BuildConfig.VERSION_NAME + ")";
-        } else {
-            // update
-            sUserAgent = appName + "/" + appVersion + " " +
-                    sUserAgent.substring(sUserAgent.indexOf("("), sUserAgent.lastIndexOf(")") - 1) +
-                            "; MatrixAndroidSDK " +  BuildConfig.VERSION_NAME + ")";
-        }
     }
 
     /**
