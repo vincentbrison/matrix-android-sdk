@@ -1,12 +1,12 @@
-/* 
+/*
  * Copyright 2015 OpenMarket Ltd
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -25,9 +25,6 @@ import android.os.AsyncTask;
 import android.os.Looper;
 import android.support.v4.util.LruCache;
 import android.text.TextUtils;
-import org.matrix.androidsdk.util.Log;
-
-import android.util.Pair;
 import android.webkit.MimeTypeMap;
 import android.widget.ImageView;
 
@@ -35,11 +32,12 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 
 import org.matrix.androidsdk.HomeserverConnectionConfig;
+import org.matrix.androidsdk.OkHttpClientProvider;
 import org.matrix.androidsdk.crypto.MXEncryptedAttachments;
 import org.matrix.androidsdk.listeners.IMXMediaDownloadListener;
 import org.matrix.androidsdk.rest.model.EncryptedFileInfo;
-import org.matrix.androidsdk.ssl.CertUtil;
 import org.matrix.androidsdk.util.ImageUtils;
+import org.matrix.androidsdk.util.Log;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -56,10 +54,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.X509TrustManager;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
 /**
  * This class manages the media downloading in background.
@@ -159,7 +160,6 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
     /**
      * Download constants
      */
-    private static final int DOWNLOAD_TIME_OUT = 10 * 1000;
     private static final int DOWNLOAD_BUFFER_READ_SIZE = 1024 * 32;
 
 
@@ -619,47 +619,32 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
             InputStream stream = null;
 
             int filelen = -1;
-            URLConnection connection = null;
-            
-            try {
-            	connection = url.openConnection();
-            
-                if (mHsConfig != null && connection instanceof HttpsURLConnection) {
-                    // Add SSL Socket factory.
-                    HttpsURLConnection sslConn = (HttpsURLConnection) connection;
-                    try {
-                        Pair<SSLSocketFactory, X509TrustManager> pair = CertUtil.newPinnedSSLSocketFactory(mHsConfig);
-                        sslConn.setSSLSocketFactory(pair.first);
-                        sslConn.setHostnameVerifier(CertUtil.newHostnameVerifier(mHsConfig));
-                    } catch (Exception e) {
-                        Log.e(LOG_TAG, "doInBackground SSL exception " + e.getLocalizedMessage());
+            OkHttpClient client = OkHttpClientProvider.getDownloadOkHttpClient(mHsConfig);
+            Request request = new Request.Builder().url(url).build();
+            Response response = client.newCall(request).execute();
+            InputStream responseBodyStream = response.body().byteStream();
+            if (response.isSuccessful()) {
+                stream = responseBodyStream;
+            } else {
+                try {
+                    BufferedReader streamReader = new BufferedReader(new InputStreamReader(
+                        responseBodyStream,
+                        "UTF-8"
+                    ));
+                    StringBuilder responseStrBuilder = new StringBuilder();
+
+                    String inputStr;
+
+                    while ((inputStr = streamReader.readLine()) != null) {
+                        responseStrBuilder.append(inputStr);
                     }
-                }
 
-                // add a timeout to avoid infinite loading display.
-                connection.setReadTimeout(DOWNLOAD_TIME_OUT);
-                filelen = connection.getContentLength();
-                stream = connection.getInputStream();
-            } catch (Exception e) {
-                Log.e(LOG_TAG, "bitmapForURL : fail to open the connection " + e.getMessage());
-
-                InputStream errorStream = ((HttpsURLConnection) connection).getErrorStream();
-
-                if (null != errorStream) {
-                    try {
-                        BufferedReader streamReader = new BufferedReader(new InputStreamReader(errorStream, "UTF-8"));
-                        StringBuilder responseStrBuilder = new StringBuilder();
-
-                        String inputStr;
-
-                        while ((inputStr = streamReader.readLine()) != null) {
-                            responseStrBuilder.append(inputStr);
-                        }
-
-                        mErrorAsJsonElement = new JsonParser().parse(responseStrBuilder.toString());
-                    } catch (Exception ee) {
-                        Log.e(LOG_TAG, "bitmapForURL : Error parsing error " + ee.getLocalizedMessage());
-                    }
+                    mErrorAsJsonElement = new JsonParser().parse(responseStrBuilder.toString());
+                } catch (Exception ee) {
+                    Log.e(
+                        LOG_TAG,
+                        "bitmapForURL : Error parsing error " + ee.getLocalizedMessage()
+                    );
                 }
 
                 // privacy
@@ -764,10 +749,6 @@ class MXMediaDownloadWorkerTask extends AsyncTask<Integer, IMXMediaDownloadListe
                         refreshTimer.cancel();
                     }
                 });
-
-                if ((null != connection) && (connection instanceof HttpsURLConnection)) {
-                    ((HttpsURLConnection) connection).disconnect();
-                }
 
                 // the file has been successfully downloaded
                 if (mDownloadStats.mProgress == 100) {

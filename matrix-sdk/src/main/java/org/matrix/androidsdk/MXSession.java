@@ -293,7 +293,7 @@ public class MXSession {
      * @param context the application context
      */
     public static void initUserAgent(Context context) {
-        RestClient.initUserAgent(context);
+        UserAgentProvider.init(context);
     }
 
     /**
