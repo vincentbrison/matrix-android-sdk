@@ -16,6 +16,7 @@
  */
 package org.matrix.androidsdk.rest.api;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import org.matrix.androidsdk.data.RoomState;
@@ -132,6 +133,23 @@ public interface RoomsApi {
      */
     @PUT("rooms/{roomId}/state/{state_event}")
     Call<Void> sendStateEvent(@Path("roomId") String roomId, @Path("state_event") String stateEvent, @Body Map<String, Object> params);
+
+    /**
+     * Looks up the contents of a state event in a room
+     * @param roomId the room id
+     * @param eventType the event type
+     */
+    @GET("rooms/{roomId}/state/{eventType}")
+    Call<JsonElement> getStateEvent(@Path("roomId") String roomId, @Path("eventType") String eventType);
+
+    /**
+     * Looks up the contents of a state event in a room
+     * @param roomId the room id
+     * @param eventType the event type
+     * @param stateKey the key of the state to look up
+     */
+    @GET("rooms/{roomId}/state/{eventType}/{stateKey}")
+    Call<JsonElement> getStateEvent(@Path("roomId") String roomId, @Path("eventType") String eventType, @Path("stateKey") String stateKey);
 
     /**
      * Invite a user to the given room.
