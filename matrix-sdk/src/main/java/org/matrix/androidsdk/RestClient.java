@@ -1,7 +1,7 @@
 /*
  * Copyright 2014 OpenMarket Ltd
  * Copyright 2017 Vector Creations Ltd
- 
+
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -16,50 +16,31 @@
  */
 package org.matrix.androidsdk;
 
-import android.content.Context;
-import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
-import android.text.TextUtils;
+import android.support.annotation.NonNull;
 
 import com.google.gson.Gson;
-import com.squareup.okhttp.OkHttpClient;
 
-import org.matrix.androidsdk.listeners.IMXNetworkEventListener;
-import org.matrix.androidsdk.rest.client.MXRestExecutor;
 import org.matrix.androidsdk.rest.model.login.Credentials;
-import org.matrix.androidsdk.ssl.CertUtil;
 import org.matrix.androidsdk.util.JsonUtils;
-import org.matrix.androidsdk.util.Log;
+import org.matrix.androidsdk.util.PolymorphicRequestBodyConverter;
 import org.matrix.androidsdk.util.UnsentEventsManager;
 
-import java.util.concurrent.TimeUnit;
-
-import retrofit.RequestInterceptor;
-import retrofit.RestAdapter;
-import retrofit.client.OkClient;
-import retrofit.converter.GsonConverter;
+import okhttp3.OkHttpClient;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
 
 /**
  * Class for making Matrix API calls.
  */
 public class RestClient<T> {
 
-    private static final String LOG_TAG = "RestClient";
-
-    public static final String URI_API_PREFIX_PATH_R0 = "/_matrix/client/r0";
-    public static final String URI_API_PREFIX_PATH_UNSTABLE = "/_matrix/client/unstable";
+    public static final String URI_API_PREFIX_PATH_R0 = "_matrix/client/r0/";
+    public static final String URI_API_PREFIX_PATH_UNSTABLE = "_matrix/client/unstable/";
 
     /**
      * Prefix used in path of identity server API requests.
      */
-    public static final String URI_API_PREFIX_IDENTITY = "/_matrix/identity/api/v1";
-
-    private static final String PARAM_ACCESS_TOKEN = "access_token";
-
-    private static final int CONNECTION_TIMEOUT_MS = 30000;
-    private static final int READ_TIMEOUT_MS = 60000;
-    private static final int WRITE_TIMEOUT_MS = 60000;
+    public static final String URI_API_PREFIX_IDENTITY = "_matrix/identity/api/v1/";
 
     protected Credentials mCredentials;
 
@@ -73,12 +54,6 @@ public class RestClient<T> {
 
     // unitary tests only
     public static boolean mUseMXExececutor = false;
-
-    // the user agent
-    private static String sUserAgent = null;
-
-    // http client
-    private OkHttpClient mOkHttpClient = new OkHttpClient();
 
     public RestClient(HomeserverConnectionConfig hsConfig, Class<T> type, String uriPrefix, boolean withNullSerialization) {
         this(hsConfig, type, uriPrefix, withNullSerialization, false);
@@ -95,105 +70,54 @@ public class RestClient<T> {
         mHsConfig = hsConfig;
         mCredentials = hsConfig.getCredentials();
 
-        mOkHttpClient = new OkHttpClient();
-
-        mOkHttpClient.setConnectTimeout(CONNECTION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-        mOkHttpClient.setReadTimeout(READ_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-        mOkHttpClient.setWriteTimeout(WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-
-        try {
-            mOkHttpClient.setSslSocketFactory(CertUtil.newPinnedSSLSocketFactory(hsConfig));
-        } catch (Exception e) {
-            Log.e(LOG_TAG, "## RestClient() setSslSocketFactory failed" + e.getMessage());
-        }
-
-        try {
-            mOkHttpClient.setHostnameVerifier(CertUtil.newHostnameVerifier(hsConfig));
-        } catch (Exception e) {
-            Log.e(LOG_TAG, "## RestClient() setSslSocketFactory failed" + e.getMessage());
-        }
-
-        // remove any trailing http in the uri prefix
-        if (uriPrefix.startsWith("http://")) {
-            uriPrefix = uriPrefix.substring("http://".length());
-        } else if (uriPrefix.startsWith("https://")) {
-            uriPrefix = uriPrefix.substring("https://".length());
-        }
-
-        final String endPoint = (useIdentityServer ? hsConfig.getIdentityServerUri().toString() : hsConfig.getHomeserverUri().toString()) + uriPrefix;
+        OkHttpClient okHttpClient = OkHttpClientProvider.getRestOkHttpClient(
+            mCredentials,
+            mUnsentEventsManager,
+            hsConfig,
+            mUseMXExececutor
+        );
+        final String endPoint = makeEndpoint(hsConfig, uriPrefix, useIdentityServer);
 
         // Rest adapter for turning API interfaces into actual REST-calling objects
-        RestAdapter.Builder builder = new RestAdapter.Builder()
-                .setEndpoint(endPoint)
-                .setConverter(new GsonConverter(gson))
-                .setClient(new OkClient(mOkHttpClient))
-                .setRequestInterceptor(new RequestInterceptor() {
-                    @Override
-                    public void intercept(RequestInterceptor.RequestFacade request) {
-                        if (null != sUserAgent) {
-                            // set a custom user agent
-                            request.addHeader("User-Agent", sUserAgent);
-                        }
+        Retrofit.Builder builder = new Retrofit.Builder()
+                .baseUrl(endPoint)
+                .addConverterFactory(PolymorphicRequestBodyConverter.FACTORY)
+                .addConverterFactory(GsonConverterFactory.create(gson))
+                .client(okHttpClient);
 
-                        // Add the access token to all requests if it is set
-                        if ((mCredentials != null) && (mCredentials.accessToken != null)) {
-                            request.addEncodedQueryParam(PARAM_ACCESS_TOKEN, mCredentials.accessToken);
-                        }
-                    }
-                });
+        Retrofit retrofit = builder.build();
 
-        if (mUseMXExececutor) {
-            builder.setExecutors(new MXRestExecutor(), new MXRestExecutor());
-        }
-
-        RestAdapter restAdapter = builder.build();
-
-        // debug only
-        //restAdapter.setLogLevel(RestAdapter.LogLevel.FULL);
-
-        mApi = restAdapter.create(type);
+        mApi = retrofit.create(type);
     }
 
-    /**
-     * Create an user agent with the application version.
-     * @param appContext the application context
-     */
-    public static void initUserAgent(Context appContext) {
-        String appName = "";
-        String appVersion = "";
+    @NonNull private String makeEndpoint(
+        HomeserverConnectionConfig hsConfig,
+        String uriPrefix,
+        boolean useIdentityServer
+    ) {
+        String baseUrl = useIdentityServer
+            ? hsConfig.getIdentityServerUri().toString()
+            : hsConfig.getHomeserverUri().toString();
+        baseUrl = sanitizeBaseUrl(baseUrl);
+        String dynamicPath = sanitizeDynamicPath(uriPrefix);
+        return baseUrl + dynamicPath;
+    }
 
-        if (null != appContext) {
-            try {
-                PackageManager pm = appContext.getPackageManager();
-                ApplicationInfo appInfo = pm.getApplicationInfo(appContext.getApplicationContext().getPackageName(), 0);
-                appName = pm.getApplicationLabel(appInfo).toString();
-
-                PackageInfo pkgInfo = pm.getPackageInfo(appContext.getApplicationContext().getPackageName(), 0);
-                appVersion = pkgInfo.versionName;
-            } catch (Exception e) {
-                Log.e(LOG_TAG, "## initUserAgent() : failed " + e.getMessage());
-            }
+    private String sanitizeBaseUrl(String baseUrl) {
+        if (baseUrl.endsWith("/")) {
+            return baseUrl;
         }
+        return baseUrl + "/";
+    }
 
-        sUserAgent = System.getProperty("http.agent");
-
-        // cannot retrieve the application version
-        if (TextUtils.isEmpty(appName) || TextUtils.isEmpty(appVersion)) {
-            if (null == sUserAgent) {
-                sUserAgent = "Java" + System.getProperty("java.version");
-            }
-            return;
+    private String sanitizeDynamicPath(String dynamicPath) {
+        // remove any trailing http in the uri prefix
+        if (dynamicPath.startsWith("http://")) {
+            dynamicPath = dynamicPath.substring("http://".length());
+        } else if (dynamicPath.startsWith("https://")) {
+            dynamicPath = dynamicPath.substring("https://".length());
         }
-
-        // if there is no user agent or cannot parse it
-        if ((null == sUserAgent) || (sUserAgent.lastIndexOf(")") == -1) || (sUserAgent.indexOf("(") == -1))  {
-            sUserAgent = appName + "/" + appVersion + " (MatrixAndroidSDK " + BuildConfig.VERSION_NAME + ")";
-        } else {
-            // update
-            sUserAgent = appName + "/" + appVersion + " " +
-                    sUserAgent.substring(sUserAgent.indexOf("("), sUserAgent.lastIndexOf(")") - 1) +
-                            "; MatrixAndroidSDK " +  BuildConfig.VERSION_NAME + ")";
-        }
+        return dynamicPath;
     }
 
     /**
@@ -202,14 +126,6 @@ public class RestClient<T> {
      */
     public void setUnsentEventsManager(UnsentEventsManager unsentEventsManager) {
         mUnsentEventsManager = unsentEventsManager;
-
-        mUnsentEventsManager.getNetworkConnectivityReceiver().addEventListener(new IMXNetworkEventListener() {
-            @Override
-            public void onNetworkConnectionUpdate(boolean isConnected) {
-                Log.e(LOG_TAG, "## setUnsentEventsManager()  : update the requests timeout to " + (isConnected ? CONNECTION_TIMEOUT_MS : 1) + " ms");
-                mOkHttpClient.setConnectTimeout(isConnected ? CONNECTION_TIMEOUT_MS : 1, TimeUnit.MILLISECONDS);
-            }
-        });
     }
 
     /**
