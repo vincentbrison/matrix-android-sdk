@@ -9,6 +9,7 @@ import org.matrix.androidsdk.util.UnsentEventsManager;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.CertificatePinner;
@@ -196,21 +197,41 @@ public final class OkHttpClientProvider {
         return new Interceptor() {
             @Override public Response intercept(Chain chain) throws IOException {
                 Request request = chain.request();
-                Response response = chain.proceed(request);
-                if (syncPath.equals(request.url().encodedPath())
-                    && !request.url().queryParameterNames().contains("since")
-                    ) {
+                boolean isFirstSync = !request.url().queryParameterNames().contains("since");
+                if (syncPath.equals(request.url().encodedPath())) {
+                    try {
+                        Response response = chain.proceed(request);
+                        ResponseBody responseBody;
+                        if (isFirstSync) {
+                            Log.d("OkHttpClient", "makeFirstSyncHackInterceptor - DETECTED - latch will be count down");
+                            ResponseBody readResponseBody = response.body();
+                            byte[] body = response.body().bytes();
+                            FirstSyncHelper.getInstance().setCachedFirstResponse(body);
+                            countdown();
 
-                    Log.d("OkHttpClient", "makeFirstSyncHackInterceptor - DETECTED");
+                            responseBody = ResponseBody.create(readResponseBody.contentType(), body);
+                        } else {
+                            responseBody = response.body();
+                        }
 
-                    ResponseBody responseBody = response.body();
-                    byte[] body = response.body().bytes();
-
-                    return response.newBuilder()
-                        .body(ResponseBody.create(responseBody.contentType(), body))
-                        .build();
+                        return response.newBuilder()
+                            .body(responseBody)
+                            .build();
+                    } catch (IOException e) {
+                        if (isFirstSync) {
+                            countdown();
+                        }
+                        throw e;
+                    }
                 } else {
-                    return response;
+                    return chain.proceed(request);
+                }
+            }
+
+            private void countdown() {
+                CountDownLatch latch = FirstSyncHelper.getInstance().getFirstSyncLatch();
+                if (latch.getCount() > 0) {
+                    latch.countDown();
                 }
             }
         };
