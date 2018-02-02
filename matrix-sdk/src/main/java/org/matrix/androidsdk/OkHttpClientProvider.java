@@ -4,6 +4,7 @@ import com.facebook.stetho.okhttp3.StethoInterceptor;
 
 import org.matrix.androidsdk.rest.client.MXRestExecutorService;
 import org.matrix.androidsdk.rest.model.login.Credentials;
+import org.matrix.androidsdk.util.Log;
 import org.matrix.androidsdk.util.UnsentEventsManager;
 
 import java.io.IOException;
@@ -17,6 +18,9 @@ import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
+
+import static org.matrix.androidsdk.RestClient.URI_API_PREFIX_PATH_R0;
 
 public final class OkHttpClientProvider {
     private static final String PARAM_ACCESS_TOKEN = "access_token";
@@ -102,6 +106,7 @@ public final class OkHttpClientProvider {
                 credentials
             ))
             .addInterceptor(makeConnectivityInterceptor(unsentEventsManager))
+            .addInterceptor(makeFirstSyncHackInterceptor())
             .addNetworkInterceptor(new StethoInterceptor());
         configureCertificatPinning(hsConfig, okHttpClientBuilder);
         if (useMXExececutor) {
@@ -182,6 +187,31 @@ public final class OkHttpClientProvider {
                     throw new IOException("Not connected");
                 }
                 return chain.proceed(chain.request());
+            }
+        };
+    }
+
+    private static Interceptor makeFirstSyncHackInterceptor() {
+        final String syncPath = "/" + URI_API_PREFIX_PATH_R0 + "sync";
+        return new Interceptor() {
+            @Override public Response intercept(Chain chain) throws IOException {
+                Request request = chain.request();
+                Response response = chain.proceed(request);
+                if (syncPath.equals(request.url().encodedPath())
+                    && !request.url().queryParameterNames().contains("since")
+                    ) {
+
+                    Log.d("OkHttpClient", "makeFirstSyncHackInterceptor - DETECTED");
+
+                    ResponseBody responseBody = response.body();
+                    byte[] body = response.body().bytes();
+
+                    return response.newBuilder()
+                        .body(ResponseBody.create(responseBody.contentType(), body))
+                        .build();
+                } else {
+                    return response;
+                }
             }
         };
     }
