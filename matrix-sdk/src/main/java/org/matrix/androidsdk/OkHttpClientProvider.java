@@ -4,10 +4,12 @@ import com.facebook.stetho.okhttp3.StethoInterceptor;
 
 import org.matrix.androidsdk.rest.client.MXRestExecutorService;
 import org.matrix.androidsdk.rest.model.login.Credentials;
+import org.matrix.androidsdk.util.Log;
 import org.matrix.androidsdk.util.UnsentEventsManager;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.CertificatePinner;
@@ -17,6 +19,9 @@ import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
+
+import static org.matrix.androidsdk.RestClient.URI_API_PREFIX_PATH_R0;
 
 public final class OkHttpClientProvider {
     private static final String PARAM_ACCESS_TOKEN = "access_token";
@@ -102,6 +107,7 @@ public final class OkHttpClientProvider {
                 credentials
             ))
             .addInterceptor(makeConnectivityInterceptor(unsentEventsManager))
+            .addInterceptor(makeFirstSyncHackInterceptor())
             .addNetworkInterceptor(new StethoInterceptor());
         configureCertificatPinning(hsConfig, okHttpClientBuilder);
         if (useMXExececutor) {
@@ -182,6 +188,51 @@ public final class OkHttpClientProvider {
                     throw new IOException("Not connected");
                 }
                 return chain.proceed(chain.request());
+            }
+        };
+    }
+
+    private static Interceptor makeFirstSyncHackInterceptor() {
+        final String syncPath = "/" + URI_API_PREFIX_PATH_R0 + "sync";
+        return new Interceptor() {
+            @Override public Response intercept(Chain chain) throws IOException {
+                Request request = chain.request();
+                boolean isFirstSync = !request.url().queryParameterNames().contains("since");
+                if (syncPath.equals(request.url().encodedPath())) {
+                    try {
+                        Response response = chain.proceed(request);
+                        ResponseBody responseBody;
+                        if (isFirstSync) {
+                            Log.d("OkHttpClient", "makeFirstSyncHackInterceptor - DETECTED - latch will be count down");
+                            ResponseBody readResponseBody = response.body();
+                            byte[] body = response.body().bytes();
+                            FirstSyncHelper.getInstance().setCachedFirstResponse(body);
+                            countdown();
+
+                            responseBody = ResponseBody.create(readResponseBody.contentType(), body);
+                        } else {
+                            responseBody = response.body();
+                        }
+
+                        return response.newBuilder()
+                            .body(responseBody)
+                            .build();
+                    } catch (IOException e) {
+                        if (isFirstSync) {
+                            countdown();
+                        }
+                        throw e;
+                    }
+                } else {
+                    return chain.proceed(request);
+                }
+            }
+
+            private void countdown() {
+                CountDownLatch latch = FirstSyncHelper.getInstance().getFirstSyncLatch();
+                if (latch.getCount() > 0) {
+                    latch.countDown();
+                }
             }
         };
     }
