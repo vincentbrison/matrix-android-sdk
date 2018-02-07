@@ -45,6 +45,7 @@ public class Log {
     private static FileHandler sFileHandler = null;
     private static File sCacheDirectory = null;
     private static String sFileName = "matrix";
+    private static boolean isEnable = true;
     
     public enum EventTag {
         /** A navigation event, e.g. onPause */ NAVIGATION,
@@ -69,7 +70,11 @@ public class Log {
         }
         catch (IOException e) {}
     }
-    
+
+    public static void setIsEnable(boolean isEnable) {
+        Log.isEnable = isEnable;
+    }
+
     /**
      * Set the directory to put log files.
      * @param cacheDir The directory, usually {@link android.content.ContextWrapper#getCacheDir()}
@@ -135,65 +140,104 @@ public class Log {
     }
 
     public static void v(String tag, String content) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.v(tag, content);
         logToFile("V", tag, content);
     }
     
     public static void v(String tag, String content, Throwable throwable) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.v(tag, content, throwable);
         logToFile("V", tag, content);
     }
     
     public static void d(String tag, String content) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.d(tag, content);
         logToFile("D", tag, content);
     }
     
     public static void d(String tag, String content, Throwable throwable) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.d(tag, content, throwable);
         logToFile("D", tag, content);
     }
     
     public static void i(String tag, String content) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.i(tag, content);
         logToFile("I", tag, content);
     }
     
     public static void i(String tag, String content, Throwable throwable) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.i(tag, content, throwable);
         logToFile("I", tag, content);
     }
     
     public static void w(String tag, String content) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.w(tag, content);
         logToFile("W", tag, content);
     }
     
     public static void w(String tag, String content, Throwable throwable) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.w(tag, content, throwable);
         logToFile("W", tag, content);
     }
     
     public static void e(String tag, String content) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.e(tag, content);
         logToFile("E", tag, content);
     }
     
     public static void e(String tag, String content, Throwable throwable) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.e(tag, content, throwable);
         logToFile("E", tag, content);
     }
     
     public static void wtf(String tag, String content) {
+        if (!isEnable) {
+            return;
+        }
         logToFile("WTF", tag, content);
         android.util.Log.wtf(tag, content);
     }
     
     public static void wtf(String tag, Throwable throwable) {
+        if (!isEnable) {
+            return;
+        }
         android.util.Log.wtf(tag, throwable);
     }
     
     public static void wtf(String tag, String content, Throwable throwable) {
+        if (!isEnable) {
+            return;
+        }
         logToFile("WTF", tag, content);
         android.util.Log.wtf(tag, content, throwable);
     }
