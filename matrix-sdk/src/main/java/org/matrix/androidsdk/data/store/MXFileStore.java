@@ -221,15 +221,14 @@ public class MXFileStore extends MXMemoryStore {
 
         if ((null == mMetadata) ||
                 (mMetadata.mVersion != MXFILE_VERSION) ||
-                !TextUtils.equals(mMetadata.mUserId, mCredentials.userId) ||
-                !TextUtils.equals(mMetadata.mAccessToken, mCredentials.accessToken)) {
+                !TextUtils.equals(mMetadata.mUserId, mCredentials.userId)) {
             deleteAllData(true);
         }
 
         // create the metadata file if it does not exist
         // either there is no store
         // or the store was not properly initialised (the application crashed during the initialsync)
-        if ((null == mMetadata) || (null == mMetadata.mAccessToken)) {
+        if ((null == mMetadata) || (null == mMetadata.mUserId)) {
             mIsNewStorage = true;
             mIsOpening = true;
             mHandlerThread.start();
@@ -237,7 +236,6 @@ public class MXFileStore extends MXMemoryStore {
 
             mMetadata = new MXFileStoreMetaData();
             mMetadata.mUserId = mCredentials.userId;
-            mMetadata.mAccessToken = mCredentials.accessToken;
             mMetadata.mVersion = MXFILE_VERSION;
             mMetaDataHasChanged = true;
             saveMetaData();
@@ -434,7 +432,6 @@ public class MXFileStore extends MXMemoryStore {
                                     if (null == mMetadata) {
                                         mMetadata = new MXFileStoreMetaData();
                                         mMetadata.mUserId = mCredentials.userId;
-                                        mMetadata.mAccessToken = mCredentials.accessToken;
                                         mMetadata.mVersion = MXFILE_VERSION;
                                         mMetaDataHasChanged = true;
                                     } else {

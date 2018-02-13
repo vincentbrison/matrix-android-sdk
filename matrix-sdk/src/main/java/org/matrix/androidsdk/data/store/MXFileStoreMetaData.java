@@ -27,9 +27,6 @@ public class MXFileStoreMetaData implements java.io.Serializable {
     // The obtained user id.
     public String mUserId = null;
 
-    // The access token to create a MXRestClient.
-    public String mAccessToken = null;
-
     //  The token indicating from where to start listening event stream to get live events.
     public String mEventStreamToken = null;
 
@@ -52,7 +49,6 @@ public class MXFileStoreMetaData implements java.io.Serializable {
         MXFileStoreMetaData copy = new MXFileStoreMetaData();
 
         copy.mUserId = mUserId;
-        copy.mAccessToken = mAccessToken;
         copy.mEventStreamToken = mEventStreamToken;
         copy.mVersion = mVersion;
         copy.mUserDisplayName = mUserDisplayName;
