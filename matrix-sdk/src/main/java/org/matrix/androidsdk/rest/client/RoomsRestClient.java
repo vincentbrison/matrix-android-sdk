@@ -18,8 +18,8 @@
 package org.matrix.androidsdk.rest.client;
 
 import android.text.TextUtils;
-import org.matrix.androidsdk.util.Log;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import org.matrix.androidsdk.HomeserverConnectionConfig;
@@ -42,6 +42,7 @@ import org.matrix.androidsdk.rest.model.RoomResponse;
 import org.matrix.androidsdk.rest.model.TokensChunkResponse;
 import org.matrix.androidsdk.rest.model.Typing;
 import org.matrix.androidsdk.rest.model.User;
+import org.matrix.androidsdk.util.Log;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -655,6 +656,49 @@ public class RoomsRestClient extends RestClient<RoomsApi> {
                     sendStateEvent(roomId, eventType, params, callback);
                 } catch (Exception e) {
                     Log.e(LOG_TAG, "resend sendStateEvent failed " + e.getLocalizedMessage());
+                }
+            }
+        }));
+    }
+
+    /**
+     * Looks up the contents of a state event in a room
+     * @param roomId the room id
+     * @param eventType the event type
+     * @param callback the asynchronous callback
+     */
+    public void getStateEvent(final String roomId, final String eventType, final ApiCallback<JsonElement> callback) {
+        final String description = "getStateEvent : roomId " + roomId + " eventId " + eventType;
+
+        mApi.getStateEvent(roomId, eventType).enqueue(new RestAdapterCallback<JsonElement>(description, mUnsentEventsManager, callback, new RestAdapterCallback.RequestRetryCallBack() {
+            @Override
+            public void onRetry() {
+                try {
+                    getStateEvent(roomId, eventType, callback);
+                } catch (Exception e) {
+                    Log.e(LOG_TAG, "resend getStateEvent failed " + e.getLocalizedMessage());
+                }
+            }
+        }));
+    }
+
+    /**
+     * Looks up the contents of a state event in a room
+     * @param roomId the room id
+     * @param eventType the event type
+     * @param stateKey the key of the state to look up
+     * @param callback the asynchronous callback
+     */
+    public void getStateEvent(final String roomId, final String eventType, final String stateKey, final ApiCallback<JsonElement> callback) {
+        final String description = "getStateEvent : roomId " + roomId + " eventId " + eventType + " stateKey " + stateKey;
+
+        mApi.getStateEvent(roomId, eventType, stateKey).enqueue(new RestAdapterCallback<JsonElement>(description, mUnsentEventsManager, callback, new RestAdapterCallback.RequestRetryCallBack() {
+            @Override
+            public void onRetry() {
+                try {
+                    getStateEvent(roomId, eventType, stateKey, callback);
+                } catch (Exception e) {
+                    Log.e(LOG_TAG, "resend getStateEvent failed " + e.getLocalizedMessage());
                 }
             }
         }));
